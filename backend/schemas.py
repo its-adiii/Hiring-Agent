@@ -93,7 +93,11 @@ class JobBase(BaseModel):
     description: str
 
 class JobCreate(JobBase):
-    pass
+    class Config:
+        orm_mode = True
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
 
 class Job(JobBase):
     id: int

@@ -1,30 +1,55 @@
 import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 import {
   Container,
-  Typography,
   Grid,
   Card,
   CardContent,
   CardActions,
   Button,
+  Typography,
   Box,
-  Chip,
   Rating,
+  Chip,
+  CircularProgress,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
   TextField,
-  CircularProgress,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Avatar,
+  Alert,
   List,
   ListItem,
   ListItemText,
   Stepper,
   Step,
   StepLabel,
-  Alert,
+  Divider,
+  Paper
 } from '@mui/material';
-import axios from 'axios';
+import {
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  Radar,
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  Cell
+} from 'recharts';
+import PlayArrow from '@mui/icons-material/PlayArrow';
+import Visibility from '@mui/icons-material/Visibility';
 
 const Screening = () => {
   const [jobs, setJobs] = useState([]);
@@ -45,6 +70,10 @@ const Screening = () => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  useEffect(() => {
+    console.log('Current screenings:', screenings); // Debug log
+  }, [screenings]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -88,6 +117,170 @@ const Screening = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleAutoScreen = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      console.log('Starting auto screening...');
+      const response = await axios.post('http://localhost:8000/auto_screen');
+      console.log('Auto screening response:', response.data);
+      
+      if (Array.isArray(response.data)) {
+        setScreenings(response.data);
+        console.log('Updated screenings:', response.data);
+      } else {
+        console.error('Invalid response format:', response.data);
+        setError('Received invalid data format from server');
+      }
+      
+      setSelectedJob(null);
+      setSelectedCandidate(null);
+    } catch (error) {
+      console.error('Error in auto screening:', error);
+      setError(error.response?.data?.detail || 'Failed to complete automatic screening. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const MatchScoreBreakdown = ({ matchData }) => {
+    // Extract scores from the match data
+    const skillMatchScore = matchData?.skill_match_details?.score || 0;
+    const experienceMatchScore = matchData?.experience_match_score || 0;
+    const overallMatchScore = matchData?.overall_match_score || 0;
+
+    const data = [
+      { 
+        category: 'Skills', 
+        score: Math.round(skillMatchScore * 100),
+        tooltip: `Skills Match: ${(skillMatchScore * 100).toFixed(1)}%`
+      },
+      { 
+        category: 'Experience', 
+        score: Math.round(experienceMatchScore * 100),
+        tooltip: `Experience Match: ${(experienceMatchScore * 100).toFixed(1)}%`
+      },
+      { 
+        category: 'Overall', 
+        score: Math.round(overallMatchScore * 100),
+        tooltip: `Overall Match: ${(overallMatchScore * 100).toFixed(1)}%`
+      }
+    ];
+
+    return (
+      <Paper sx={{ p: 3, height: '100%', minHeight: 500 }}>
+        <Typography variant="h6" gutterBottom>
+          Match Score Breakdown
+        </Typography>
+        <Box sx={{ 
+          height: 450, 
+          width: '100%', 
+          display: 'flex', 
+          justifyContent: 'center', 
+          alignItems: 'center' 
+        }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data} margin={{ top: 20, right: 30, left: 40, bottom: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+              <XAxis 
+                dataKey="category" 
+                tick={{ fontSize: 14 }}
+              />
+              <YAxis 
+                domain={[0, 100]} 
+                tick={{ fontSize: 12 }}
+                tickFormatter={(value) => `${value}%`}
+              />
+              <Tooltip 
+                formatter={(value, name, props) => [props.payload.tooltip]}
+                contentStyle={{
+                  background: 'rgba(255,255,255,0.9)',
+                  border: 'none',
+                  borderRadius: '4px',
+                  padding: '10px'
+                }}
+              />
+              <Bar 
+                dataKey="score" 
+                fill="#7986cb"
+                radius={[4, 4, 0, 0]}
+              >
+                {data.map((entry, index) => (
+                  <Cell 
+                    key={`cell-${index}`}
+                    fill={entry.score >= 70 ? '#4caf50' : '#7986cb'}
+                  />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </Box>
+      </Paper>
+    );
+  };
+
+  const renderSkillMatchChart = (screening) => {
+    if (!screening?.skill_match_details?.matched_skills) return null;
+
+    const allSkills = [
+      ...(screening.skill_match_details.matched_skills || []),
+      ...(screening.skill_match_details.missing_skills || [])
+    ];
+
+    const data = allSkills.map(skill => ({
+      skill,
+      match: screening.skill_match_details.matched_skills.includes(skill) ? 1 : 0,
+      required: 1
+    }));
+
+    return (
+      <Paper sx={{ p: 3, height: '100%', minHeight: 500 }}>
+        <Typography variant="h6" gutterBottom>
+          Skills Match Analysis
+        </Typography>
+        <Box sx={{ 
+          height: 450, 
+          width: '100%', 
+          display: 'flex', 
+          justifyContent: 'center', 
+          alignItems: 'center' 
+        }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <RadarChart cx="50%" cy="50%" outerRadius="80%" data={data}>
+              <PolarGrid gridType="polygon" />
+              <PolarAngleAxis
+                dataKey="skill"
+                tick={{ fill: '#666', fontSize: 14 }}
+              />
+              <PolarRadiusAxis angle={30} domain={[0, 100]} />
+              <Radar
+                name="Matched Skills"
+                dataKey="match"
+                stroke="#4caf50"
+                fill="#4caf50"
+                fillOpacity={0.5}
+              />
+              <Radar
+                name="Required Skills"
+                dataKey="required"
+                stroke="#7986cb"
+                fill="#7986cb"
+                fillOpacity={0.5}
+              />
+              <Legend 
+                wrapperStyle={{ 
+                  paddingTop: '20px',
+                  fontSize: '14px'
+                }} 
+              />
+              <Tooltip />
+            </RadarChart>
+          </ResponsiveContainer>
+        </Box>
+      </Paper>
+    );
   };
 
   const startInterview = (screening) => {
@@ -177,185 +370,170 @@ const Screening = () => {
     }
   };
 
+  const handleViewProfile = (candidateId) => {
+    if (!candidateId) {
+      setError('Candidate ID not found');
+      return;
+    }
+    // You can implement the profile view logic here
+    console.log('Viewing profile for candidate:', candidateId);
+  };
+
+  const renderScreeningResults = () => {
+    console.log('Rendering screenings:', screenings);
+    
+    if (screenings.length === 0) {
+      return (
+        <Typography variant="body1" color="textSecondary" sx={{ mt: 2 }}>
+          No screening results available.
+        </Typography>
+      );
+    }
+
+    return screenings.map((screening) => (
+      <Grid item xs={12} md={6} key={`${screening.job_id}-${screening.candidate_id}`}>
+        <Card>
+          <CardContent sx={{ p: 3 }}>
+            <Grid container spacing={2}>
+              {/* Header with Avatar and Basic Info */}
+              <Grid item xs={12} sx={{ mb: 2 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                  <Avatar sx={{ width: 56, height: 56, bgcolor: 'primary.main', fontSize: '1.5rem' }}>
+                    {screening.candidate?.name?.[0] || 'C'}
+                  </Avatar>
+                  <Box sx={{ ml: 2, flex: 1 }}>
+                    <Typography variant="h6" noWrap>
+                      {screening.candidate?.name || 'Unknown Candidate'}
+                    </Typography>
+                    <Typography variant="body2" color="textSecondary" noWrap>
+                      {screening.candidate?.email || 'No email provided'}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ textAlign: 'right' }}>
+                    <Typography variant="h3" sx={{ color: 'primary.main', fontWeight: 'bold' }}>
+                      {Math.round((screening.match_score || 0) * 100)}%
+                    </Typography>
+                    <Rating
+                      value={(screening.match_score || 0) * 5}
+                      readOnly
+                      precision={0.5}
+                      size="small"
+                    />
+                  </Box>
+                </Box>
+              </Grid>
+
+              {/* Skills Section */}
+              <Grid item xs={12}>
+                <Typography variant="subtitle1" gutterBottom sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  Skills
+                  <Typography variant="body2" color="textSecondary">
+                    {screening.skill_match_details?.matched_skills?.length || 0} of {(screening.skill_match_details?.matched_skills?.length || 0) + (screening.skill_match_details?.missing_skills?.length || 0)} matched
+                  </Typography>
+                </Typography>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 2 }}>
+                  {screening.skill_match_details?.matched_skills?.slice(0, 4).map((skill, index) => (
+                    <Chip
+                      key={index}
+                      label={skill}
+                      size="small"
+                      color="success"
+                      variant="outlined"
+                    />
+                  ))}
+                  {screening.skill_match_details?.matched_skills?.length > 4 && (
+                    <Chip
+                      label={`+${screening.skill_match_details.matched_skills.length - 4}`}
+                      size="small"
+                      color="primary"
+                      variant="outlined"
+                    />
+                  )}
+                </Box>
+              </Grid>
+
+              {/* Charts */}
+              <Grid item xs={12}>
+                <Divider sx={{ my: 2 }} />
+                <Grid container spacing={2}>
+                  <Grid item xs={12} md={6}>
+                    <MatchScoreBreakdown matchData={screening} />
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    {renderSkillMatchChart(screening)}
+                  </Grid>
+                </Grid>
+              </Grid>
+            </Grid>
+          </CardContent>
+          <CardActions sx={{ p: 2, gap: 1, bgcolor: 'grey.50' }}>
+            <Button
+              variant="contained"
+              color="primary"
+              onClick={() => startInterview(screening)}
+              startIcon={<PlayArrow />}
+              size="small"
+              sx={{ flex: 1 }}
+            >
+              Interview
+            </Button>
+            <Button
+              variant="outlined"
+              color="primary"
+              startIcon={<Visibility />}
+              size="small"
+              sx={{ flex: 1 }}
+              onClick={() => handleViewProfile(screening.candidate?.id)}
+            >
+              Profile
+            </Button>
+          </CardActions>
+        </Card>
+      </Grid>
+    ));
+  };
+
   return (
-    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-      <Typography variant="h4" gutterBottom>
-        Candidate Screening
-      </Typography>
-
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
-
-      <Card sx={{ mb: 4 }}>
-        <CardContent>
-          <Typography variant="h6" gutterBottom>
-            Create New Match
-          </Typography>
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={5}>
-              <Typography variant="subtitle1" gutterBottom>
-                Select Job:
+    <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
+      <Grid container spacing={3}>
+        {/* Auto Screening Button */}
+        <Grid item xs={12}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Automatic Screening
               </Typography>
-              <List>
-                {jobs.map((job) => (
-                  <ListItem
-                    key={job.id}
-                    button
-                    selected={selectedJob?.id === job.id}
-                    onClick={() => setSelectedJob(job)}
-                  >
-                    <ListItemText
-                      primary={job.title}
-                      secondary={`${job.standardized_role} - ${job.experience_level}`}
-                    />
-                  </ListItem>
-                ))}
-              </List>
-            </Grid>
-            <Grid item xs={12} md={5}>
-              <Typography variant="subtitle1" gutterBottom>
-                Select Candidate:
+              <Typography variant="body2" color="textSecondary" gutterBottom>
+                Click the button below to automatically screen all candidates against all jobs.
               </Typography>
-              <List>
-                {candidates.map((candidate) => (
-                  <ListItem
-                    key={candidate.id}
-                    button
-                    selected={selectedCandidate?.id === candidate.id}
-                    onClick={() => setSelectedCandidate(candidate)}
-                  >
-                    <ListItemText
-                      primary={candidate.name}
-                      secondary={`${candidate.experience_level} - Score: ${Math.round(candidate.technical_score * 100)}%`}
-                    />
-                  </ListItem>
-                ))}
-              </List>
-            </Grid>
-            <Grid item xs={12} md={2}>
               <Button
                 variant="contained"
                 color="primary"
-                fullWidth
-                onClick={handleMatch}
-                disabled={loading || !selectedJob || !selectedCandidate}
+                onClick={handleAutoScreen}
+                disabled={loading}
+                sx={{ mt: 2 }}
               >
-                {loading ? <CircularProgress size={24} /> : 'Create Match'}
+                {loading ? <CircularProgress size={24} /> : 'Start Auto Screening'}
               </Button>
-            </Grid>
-          </Grid>
-        </CardContent>
-      </Card>
-
-      <Typography variant="h5" gutterBottom>
-        Screening Results
-      </Typography>
-
-      <Grid container spacing={3}>
-        {screenings.map((screening) => (
-          <Grid item xs={12} md={6} key={screening.id}>
-            <Card>
-              <CardContent>
-                <Typography variant="h6" gutterBottom>
-                  Match #{screening.id}
-                </Typography>
-                <Box sx={{ mb: 2 }}>
-                  <Typography color="textSecondary">
-                    Candidate: {candidates.find(c => c.id === screening.candidate_id)?.name}
-                  </Typography>
-                  <Typography color="textSecondary">
-                    Position: {jobs.find(j => j.id === screening.job_id)?.title}
-                  </Typography>
-                </Box>
-                <Box sx={{ my: 2 }}>
-                  <Typography component="legend">Match Score</Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Rating
-                      value={screening.match_score * 5}
-                      readOnly
-                      precision={0.5}
-                    />
-                    <Typography variant="body2" sx={{ ml: 1 }}>
-                      {Math.round(screening.match_score * 100)}%
-                    </Typography>
-                  </Box>
-                </Box>
-                <Chip
-                  label={screening.status || 'Pending Interview'}
-                  color={screening.status === 'Interview Completed' ? 'success' : 'warning'}
-                  sx={{ mt: 1 }}
-                />
-              </CardContent>
-              <CardActions>
-                <Button
-                  size="small"
-                  color="primary"
-                  onClick={() => startInterview(screening)}
-                  disabled={screening.status === 'Interview Completed'}
-                >
-                  {screening.status === 'Interview Completed' ? 'Interview Complete' : 'Start Interview'}
-                </Button>
-              </CardActions>
-            </Card>
-          </Grid>
-        ))}
-      </Grid>
-
-      <Dialog
-        open={openDialog}
-        onClose={() => setOpenDialog(false)}
-        maxWidth="md"
-        fullWidth
-      >
-        <DialogTitle>
-          Interview Session - {questionType === 'technical' ? 'Technical' : 'Behavioral'} Question {questionIndex + 1}
-        </DialogTitle>
-        <DialogContent>
-          {currentQuestion && (
-            <>
-              <Typography variant="h6" sx={{ mt: 2, mb: 3 }}>
-                {currentQuestion}
-              </Typography>
-              <TextField
-                fullWidth
-                multiline
-                rows={4}
-                label="Your Answer"
-                value={answer}
-                onChange={(e) => setAnswer(e.target.value)}
-                margin="normal"
-              />
-              {feedback && (
-                <Box sx={{ mt: 2 }}>
-                  <Typography variant="subtitle1" gutterBottom>
-                    Feedback:
-                  </Typography>
-                  <Typography variant="body2" color="textSecondary">
-                    Score: {Math.round(feedback.score * 100)}%
-                  </Typography>
-                  <Typography variant="body2">
-                    {feedback.feedback}
-                  </Typography>
-                </Box>
+              {error && (
+                <Alert severity="error" sx={{ mt: 2 }}>
+                  {error}
+                </Alert>
               )}
-            </>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setOpenDialog(false)}>Cancel Interview</Button>
-          <Button
-            onClick={handleNextQuestion}
-            disabled={loading || !answer.trim()}
-            color="primary"
-            variant="contained"
-          >
-            {loading ? <CircularProgress size={24} /> : isLastQuestion() ? 'Complete Interview' : 'Next Question'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Screening Results */}
+        <Grid item xs={12}>
+          <Typography variant="h5" gutterBottom>
+            Screening Results
+          </Typography>
+          <Grid container spacing={3}>
+            {renderScreeningResults()}
+          </Grid>
+        </Grid>
+      </Grid>
     </Container>
   );
 };

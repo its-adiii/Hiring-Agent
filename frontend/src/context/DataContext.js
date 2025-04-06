@@ -16,17 +16,22 @@ export const useData = () => useContext(DataContext);
 
 export const DataProvider = ({ children }) => {
   const [stats, setStats] = useState({
-    activeJobs: 0,
-    candidates: 0,
-    interviews: 0,
-    placements: 0,
+    total_candidates: 0,
+    active_jobs: 0,
+    successful_matches: 0,
+    screening_rate: 0,
+    monthly_hires: [],
+    system_uptime: '0%',
+    success_rate: '0%',
+    technical_skills: 0,
+    soft_skills: 0,
+    leadership_skills: 0,
+    domain_skills: 0,
+    screened_candidates: 0,
+    interviewed_candidates: 0,
+    hired_candidates: 0
   });
-  const [recentActivity, setRecentActivity] = useState([]);
-  const [metrics, setMetrics] = useState({
-    interviewSuccessRate: 0,
-    responseRate: 0,
-    timeToHire: 0,
-  });
+  const [recent_activity, setRecentActivity] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -36,10 +41,9 @@ export const DataProvider = ({ children }) => {
       const response = await api.get('/dashboard');
       console.log('Dashboard response:', response.data); // Debug log
       
-      if (response.data) {
-        setStats(response.data.stats || {});
-        setMetrics(response.data.metrics || {});
-        setRecentActivity(response.data.recentActivity || []);
+      if (response.data && response.data.stats) {
+        setStats(response.data.stats);
+        setRecentActivity(response.data.recent_activity || []);
         setError(null);
       } else {
         throw new Error('No data received from server');
@@ -62,8 +66,7 @@ export const DataProvider = ({ children }) => {
     <DataContext.Provider
       value={{
         stats,
-        recentActivity,
-        metrics,
+        recent_activity,
         loading,
         error,
         refreshData: fetchDashboardData,

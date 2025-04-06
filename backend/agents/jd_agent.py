@@ -39,6 +39,7 @@ class JDProcessingAgent(BaseAgent):
         2. Nice-to-have Skills
         3. Experience Level (Entry/Mid/Senior)
         4. Key Responsibilities
+        5. Expected Salary Range (if mentioned, or estimate based on role and experience)
         
         Job Description: {description}
         
@@ -66,6 +67,7 @@ class JDProcessingAgent(BaseAgent):
             nice_to_have = []
             experience_level = "Entry Level"
             responsibilities = []
+            salary_range = "Not specified"
             
             current_section = ""
             for line in analysis_lines:
@@ -82,6 +84,10 @@ class JDProcessingAgent(BaseAgent):
                         experience_level = "Mid Level"
                 elif "Responsibilities" in line:
                     current_section = "responsibilities"
+                elif "Salary Range" in line:
+                    current_section = "salary"
+                    if ":" in line:
+                        salary_range = line.split(":", 1)[1].strip()
                 elif line and not line.endswith(':'):
                     if current_section == "required":
                         required_skills.extend([s.strip() for s in line.split(',')])
@@ -89,6 +95,8 @@ class JDProcessingAgent(BaseAgent):
                         nice_to_have.extend([s.strip() for s in line.split(',')])
                     elif current_section == "responsibilities":
                         responsibilities.append(line)
+                    elif current_section == "salary" and salary_range == "Not specified":
+                        salary_range = line.strip()
             
             return {
                 "standardized_role": standard_role,
@@ -96,6 +104,7 @@ class JDProcessingAgent(BaseAgent):
                 "nice_to_have_skills": nice_to_have,
                 "experience_level": experience_level,
                 "responsibilities": responsibilities,
+                "salary_range": salary_range,
                 "full_analysis": analysis
             }
             
@@ -107,5 +116,6 @@ class JDProcessingAgent(BaseAgent):
                 "nice_to_have_skills": [],
                 "experience_level": "Entry Level",
                 "responsibilities": [],
+                "salary_range": "Not specified",
                 "full_analysis": "Error processing description"
             }

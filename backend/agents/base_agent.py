@@ -1,13 +1,16 @@
 import torch
 from transformers import AutoTokenizer, T5ForConditionalGeneration
 import logging
+import os
+import asyncio
+from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 
 class BaseAgent:
     def __init__(self):
         try:
-            self.model_name = "google/flan-t5-small"
+            self.model_name = "google/flan-t5-base"  # Using a larger model for better results
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             logger.info(f"Using device: {self.device}")
             
@@ -39,7 +42,8 @@ class BaseAgent:
                 max_length=max_length,
                 num_beams=4,
                 temperature=0.7,
-                early_stopping=True
+                early_stopping=True,
+                no_repeat_ngram_size=2
             )
             
             # Decode and return

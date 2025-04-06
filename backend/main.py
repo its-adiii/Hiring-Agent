@@ -7,7 +7,8 @@ import logging
 import json
 from database import SessionLocal, engine, Base
 import models
-from agents import JDProcessingAgent, CandidateAgent, InterviewAgent
+from agents.screening_agent import AutoScreeningAgent
+from schemas import JobCreate, Job, CandidateJobMatchBase, InterviewResponse, CandidateBase
 
 # Configure logging
 logging.basicConfig(
@@ -31,9 +32,7 @@ app.add_middleware(
 )
 
 # Initialize agents
-jd_agent = JDProcessingAgent()
-candidate_agent = CandidateAgent()
-interview_agent = InterviewAgent()
+screening_agent = AutoScreeningAgent()
 
 # Database dependency
 def get_db():
@@ -136,80 +135,46 @@ async def root():
 
 @app.get("/dashboard")
 async def get_dashboard_data(db: Session = Depends(get_db)):
+    """Get dynamic dashboard data."""
     try:
-        logger.info("Fetching dashboard data")
+        # Get total candidates
+        total_candidates = db.query(models.Candidate).count()
+        logger.info(f"Total candidates: {total_candidates}")
         
-        # Get data from database
-        jobs = db.query(models.Job).all()
-        candidates = db.query(models.Candidate).all()
-        interviews = db.query(models.Interview).all()
+        # Get total active jobs
+        active_jobs = db.query(models.Job).count()
+        logger.info(f"Active jobs: {active_jobs}")
         
-        # Calculate stats
-        completed_interviews = [i for i in interviews if i.status == "Completed"]
-        successful_interviews = [i for i in completed_interviews if i.score and i.score >= 0.7]
+        # Get all matches and calculate successful matches
+        matches = db.query(models.CandidateJobMatch).all()
+        total_matches = len(matches)
+        successful_matches = sum(1 for match in matches if match.match_score and match.match_score >= 0.7)
         
-        stats = {
-            "activeJobs": len(jobs),
-            "candidates": len(candidates),
-            "interviews": len(completed_interviews),
-            "placements": len([i for i in interviews if i.status == "Placed"])
-        }
+        logger.info(f"Total matches: {total_matches}")
+        logger.info(f"Successful matches: {successful_matches}")
         
-        # Calculate metrics
-        metrics = {
-            "interviewSuccessRate": round((len(successful_interviews) / len(completed_interviews) * 100) if completed_interviews else 0, 2),
-            "responseRate": round((len(interviews) / len(candidates) * 100) if candidates else 0, 2),
-            "timeToHire": "12 days"
-        }
+        # Calculate screening rate
+        candidates_with_matches = len(set(match.candidate_id for match in matches))
+        screening_rate = (candidates_with_matches / total_candidates * 100) if total_candidates > 0 else 0
+        logger.info(f"Screening rate: {screening_rate}%")
         
-        # Get recent activity
-        all_items = []
-        
-        # Add jobs to activity
-        for job in jobs[-5:]:
-            all_items.append({
-                "id": f"job_{job.id}",
-                "type": "job",
-                "description": f"New job posted: {job.title}",
-                "timestamp": job.created_at.isoformat() if job.created_at else datetime.utcnow().isoformat()
-            })
-        
-        # Add candidates to activity
-        for candidate in candidates[-5:]:
-            all_items.append({
-                "id": f"candidate_{candidate.id}",
-                "type": "candidate",
-                "description": f"New candidate registered: {candidate.name}",
-                "timestamp": candidate.created_at.isoformat() if candidate.created_at else datetime.utcnow().isoformat()
-            })
-        
-        # Add interviews to activity
-        for interview in interviews[-5:]:
-            description = f"Interview {interview.status.lower()}"
-            if interview.score is not None:
-                description += f": Score {interview.score * 100:.0f}%"
-            
-            all_items.append({
-                "id": f"interview_{interview.id}",
-                "type": "interview",
-                "description": description,
-                "timestamp": interview.created_at.isoformat() if interview.created_at else datetime.utcnow().isoformat()
-            })
-        
-        # Sort by timestamp and get most recent 5
-        recent_activity = sorted(all_items, key=lambda x: x["timestamp"], reverse=True)[:5]
-        
+        # Prepare response data
         response_data = {
-            "stats": stats,
-            "metrics": metrics,
-            "recentActivity": recent_activity
+            "stats": {
+                "activeJobs": active_jobs,
+                "candidates": total_candidates,
+                "total_matches": total_matches,
+                "successful_matches": successful_matches,
+                "screening_rate": round(screening_rate, 1)
+            }
         }
         
-        logger.info(f"Dashboard data prepared: {json.dumps(response_data)}")
+        logger.info(f"Dashboard response: {json.dumps(response_data)}")
         return response_data
         
     except Exception as e:
-        logger.error(f"Error fetching dashboard data: {str(e)}")
+        logger.error(f"Error getting dashboard data: {str(e)}")
+        logger.exception("Full traceback:")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/debug/data")
@@ -227,6 +192,401 @@ async def get_debug_data(db: Session = Depends(get_db)):
         }
     except Exception as e:
         logger.error(f"Error fetching debug data: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/debug/status")
+async def get_debug_status(db: Session = Depends(get_db)):
+    """Get debug information about the current database state."""
+    try:
+        jobs = db.query(models.Job).all()
+        candidates = db.query(models.Candidate).all()
+        matches = db.query(models.CandidateJobMatch).all()
+        
+        return {
+            "jobs_count": len(jobs),
+            "jobs": [{"id": j.id, "title": j.title, "skills": j.required_skills} for j in jobs],
+            "candidates_count": len(candidates),
+            "candidates": [{"id": c.id, "name": c.name, "skills": c.skills} for c in candidates],
+            "matches_count": len(matches)
+        }
+    except Exception as e:
+        logger.error(f"Error in debug status: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/jobs")
+async def create_job(job: JobCreate, db: Session = Depends(get_db)):
+    try:
+        logger.info(f"Processing job: {job.title}")
+        
+        # Process job with AI agent
+        processed_job = await screening_agent.process_full_description(job.title, job.description)
+        logger.info(f"AI processed job: {processed_job}")
+        
+        # Create job record with proper JSON fields
+        db_job = models.Job(
+            title=job.title,
+            description=job.description,
+            standardized_role=processed_job.get("standardized_role", ""),
+            required_skills=processed_job.get("required_skills", []),  # Ensure this is a list
+            created_at=datetime.utcnow()
+        )
+        
+        # Add and commit with error handling
+        try:
+            db.add(db_job)
+            db.commit()
+            db.refresh(db_job)
+            logger.info(f"Job created successfully: {db_job.id}")
+            return db_job
+        except Exception as db_error:
+            logger.error(f"Database error: {str(db_error)}")
+            db.rollback()
+            raise HTTPException(status_code=500, detail="Failed to save job to database")
+        
+    except Exception as e:
+        logger.error(f"Error creating job: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/jobs", response_model=List[Job])
+async def get_jobs(db: Session = Depends(get_db)):
+    try:
+        jobs = db.query(models.Job).all()
+        logger.info(f"Retrieved {len(jobs)} jobs")
+        return jobs
+    except Exception as e:
+        logger.error(f"Error retrieving jobs: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/jobs/{job_id}")
+async def delete_job(job_id: int, db: Session = Depends(get_db)):
+    """Delete a job by ID."""
+    try:
+        # Find the job
+        job = db.query(models.Job).filter(models.Job.id == job_id).first()
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        
+        # Delete any associated matches
+        db.query(models.CandidateJobMatch).filter(models.CandidateJobMatch.job_id == job_id).delete()
+        
+        # Delete any associated interviews
+        db.query(models.Interview).filter(models.Interview.job_id == job_id).delete()
+        
+        # Delete the job
+        db.delete(job)
+        db.commit()
+        
+        return {"message": "Job deleted successfully"}
+        
+    except Exception as e:
+        logger.error(f"Error deleting job {job_id}: {str(e)}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/match_candidate_job")
+async def match_candidate_job(match: CandidateJobMatchBase, db: Session = Depends(get_db)):
+    try:
+        logger.info(f"Received match request: {match}")
+        
+        # Get candidate and job
+        candidate = db.query(models.Candidate).filter(models.Candidate.id == match.candidate_id).first()
+        job = db.query(models.Job).filter(models.Job.id == match.job_id).first()
+        
+        logger.info(f"Found candidate: {candidate}, job: {job}")
+        
+        if not candidate or not job:
+            raise HTTPException(status_code=404, detail="Candidate or job not found")
+        
+        # Calculate match score and generate interview questions
+        skill_match = set(candidate.skills or []).intersection(set(job.required_skills or []))
+        match_score = len(skill_match) / len(job.required_skills) if job.required_skills else 0
+        
+        logger.info(f"Calculated match score: {match_score}, matched skills: {skill_match}")
+        
+        # Generate interview questions based on matched skills
+        technical_questions = [
+            f"Explain your experience with {skill}" for skill in skill_match
+        ]
+        
+        behavioral_questions = [
+            "Describe a challenging project you worked on and how you handled it",
+            "How do you handle disagreements with team members?",
+            "Tell me about a time you had to learn a new technology quickly"
+        ]
+        
+        # Create match record
+        db_match = models.CandidateJobMatch(
+            candidate_id=match.candidate_id,
+            job_id=match.job_id,
+            match_score=match_score,
+            skill_match_details={"matched_skills": list(skill_match)},
+            interview_questions={
+                "technical": technical_questions,
+                "behavioral": behavioral_questions
+            },
+            created_at=datetime.utcnow()
+        )
+        
+        db.add(db_match)
+        db.commit()
+        db.refresh(db_match)
+        
+        logger.info(f"Created match record: {db_match.id}")
+        return db_match
+        
+    except Exception as e:
+        logger.error(f"Error matching candidate with job: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/matches")
+async def get_matches(db: Session = Depends(get_db)):
+    try:
+        matches = db.query(models.CandidateJobMatch).all()
+        logger.info(f"Retrieved {len(matches)} matches")
+        return [match.to_dict() for match in matches]
+    except Exception as e:
+        logger.error(f"Error retrieving matches: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/candidates")
+async def create_candidate(candidate: CandidateBase, db: Session = Depends(get_db)):
+    try:
+        logger.info(f"Processing candidate: {candidate.name}")
+        
+        # Extract skills from resume using AI
+        skills = ["React.js", "Node.js", "TypeScript", "AWS", "Docker", "MongoDB"]  # Placeholder for AI extraction
+        
+        # Create candidate record
+        db_candidate = models.Candidate(
+            name=candidate.name,
+            email=candidate.email,
+            resume=candidate.resume,
+            skills=skills,
+            experience=5,  # Placeholder for AI extraction
+            created_at=datetime.utcnow()
+        )
+        
+        db.add(db_candidate)
+        db.commit()
+        db.refresh(db_candidate)
+        
+        logger.info(f"Candidate created successfully: {db_candidate.id}")
+        return db_candidate
+        
+    except Exception as e:
+        logger.error(f"Error creating candidate: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/candidates")
+async def get_candidates(db: Session = Depends(get_db)):
+    try:
+        candidates = db.query(models.Candidate).all()
+        logger.info(f"Retrieved {len(candidates)} candidates")
+        return candidates
+    except Exception as e:
+        logger.error(f"Error retrieving candidates: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/candidates/{candidate_id}")
+async def delete_candidate(candidate_id: int, db: Session = Depends(get_db)):
+    """Delete a candidate by ID."""
+    try:
+        # Find the candidate
+        candidate = db.query(models.Candidate).filter(models.Candidate.id == candidate_id).first()
+        if not candidate:
+            raise HTTPException(status_code=404, detail="Candidate not found")
+        
+        # Delete any associated matches
+        db.query(models.CandidateJobMatch).filter(models.CandidateJobMatch.candidate_id == candidate_id).delete()
+        
+        # Delete any associated interviews
+        db.query(models.Interview).filter(models.Interview.candidate_id == candidate_id).delete()
+        
+        # Delete the candidate
+        db.delete(candidate)
+        db.commit()
+        
+        return {"message": "Candidate deleted successfully"}
+        
+    except Exception as e:
+        logger.error(f"Error deleting candidate {candidate_id}: {str(e)}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/interview_response")
+async def process_interview_response(
+    response: InterviewResponse,
+    db: Session = Depends(get_db)
+):
+    try:
+        # Get the interview
+        interview = db.query(models.Interview).filter(models.Interview.id == response.interview_id).first()
+        if not interview:
+            raise HTTPException(status_code=404, detail="Interview not found")
+        
+        # Evaluate the response using AI
+        feedback = {
+            "score": 0.85,  # This should be calculated by the AI model
+            "feedback": "Good answer! You demonstrated clear understanding of the concept."
+        }
+        
+        # Update interview responses
+        if not interview.responses:
+            interview.responses = []
+        
+        interview.responses.append({
+            "question_id": response.question_id,
+            "response": response.response,
+            "feedback": feedback
+        })
+        
+        # Update overall score
+        scores = [resp["feedback"]["score"] for resp in interview.responses]
+        interview.score = sum(scores) / len(scores)
+        
+        if len(interview.responses) == len(interview.questions.get("technical", [])) + len(interview.questions.get("behavioral", [])):
+            interview.status = "Interview Completed"
+        
+        db.commit()
+        
+        return feedback
+        
+    except Exception as e:
+        logger.error(f"Error processing interview response: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/auto_screen")
+async def auto_screen_candidates(db: Session = Depends(get_db)):
+    """Return static screening data for testing."""
+    try:
+        logger.info("Returning static screening data")
+        
+        # Static matches data
+        static_matches = [
+            {
+                "id": 1,
+                "job": {
+                    "id": 1,
+                    "title": "Senior Python Developer",
+                    "description": "Looking for an experienced Python developer with FastAPI and React experience",
+                    "required_skills": ["Python", "FastAPI", "React", "SQL"],
+                    "experience_level": "Senior",
+                    "created_at": "2025-04-06T10:00:00"
+                },
+                "candidate": {
+                    "id": 1,
+                    "name": "John Doe",
+                    "email": "john@example.com",
+                    "resume": "Experienced full-stack developer with 5 years of Python and React experience",
+                    "skills": ["Python", "FastAPI", "React", "JavaScript", "SQL"],
+                    "experience": 5,
+                    "created_at": "2025-04-06T10:00:00"
+                },
+                "match_score": 0.85,
+                "skill_match_details": {
+                    "score": 0.9,
+                    "matched_skills": ["Python", "FastAPI", "React", "SQL"],
+                    "missing_skills": []
+                },
+                "interview_questions": {
+                    "technical": [
+                        "Explain FastAPI's dependency injection system",
+                        "How do you handle state management in React?",
+                        "Describe your experience with Python async/await"
+                    ],
+                    "behavioral": [
+                        "Tell me about a challenging project you worked on",
+                        "How do you handle tight deadlines?",
+                        "Describe your approach to learning new technologies"
+                    ]
+                },
+                "created_at": "2025-04-06T10:00:00"
+            },
+            {
+                "id": 2,
+                "job": {
+                    "id": 2,
+                    "title": "Frontend Developer",
+                    "description": "Looking for a React developer with UI/UX experience",
+                    "required_skills": ["React", "JavaScript", "CSS", "TypeScript"],
+                    "experience_level": "Mid Level",
+                    "created_at": "2025-04-06T10:00:00"
+                },
+                "candidate": {
+                    "id": 2,
+                    "name": "Jane Smith",
+                    "email": "jane@example.com",
+                    "resume": "Frontend developer with strong React and UI/UX skills",
+                    "skills": ["React", "JavaScript", "CSS", "HTML", "TypeScript"],
+                    "experience": 3,
+                    "created_at": "2025-04-06T10:00:00"
+                },
+                "match_score": 0.92,
+                "skill_match_details": {
+                    "score": 1.0,
+                    "matched_skills": ["React", "JavaScript", "CSS", "TypeScript"],
+                    "missing_skills": []
+                },
+                "interview_questions": {
+                    "technical": [
+                        "Explain React hooks and their benefits",
+                        "How do you optimize React component performance?",
+                        "Describe your experience with TypeScript"
+                    ],
+                    "behavioral": [
+                        "How do you collaborate with designers?",
+                        "Tell me about a time you improved UI performance",
+                        "How do you stay updated with frontend trends?"
+                    ]
+                },
+                "created_at": "2025-04-06T10:00:00"
+            }
+        ]
+        
+        logger.info(f"Returning {len(static_matches)} static matches")
+        return static_matches
+        
+    except Exception as e:
+        logger.error(f"Error returning static screening data: {str(e)}")
+        logger.exception("Full traceback:")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/debug/add_test_data")
+async def add_test_data(db: Session = Depends(get_db)):
+    """Add test job and candidate data."""
+    try:
+        # Add a test job
+        test_job = models.Job(
+            title="Senior Software Engineer",
+            description="We are looking for an experienced software engineer with expertise in Python and React.",
+            standardized_role="Software Engineer",
+            required_skills=["Python", "React", "SQL", "Git"],
+            created_at=datetime.utcnow()
+        )
+        db.add(test_job)
+        
+        # Add a test candidate
+        test_candidate = models.Candidate(
+            name="John Doe",
+            email="john@example.com",
+            resume="Experienced software engineer with 5 years of experience in Python, React, and SQL development.",
+            skills=["Python", "React", "JavaScript", "SQL", "Git"],
+            experience=5,
+            created_at=datetime.utcnow()
+        )
+        db.add(test_candidate)
+        
+        db.commit()
+        db.refresh(test_job)
+        db.refresh(test_candidate)
+        
+        return {
+            "job": test_job.to_dict(),
+            "candidate": test_candidate.to_dict()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error adding test data: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
