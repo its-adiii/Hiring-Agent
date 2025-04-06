@@ -34,7 +34,7 @@ An intelligent recruitment system that leverages multiple AI agents to streamlin
    - Interview Agent
 
 2. **Database**
-   - PostgreSQL for structured data
+   - SQLite for structured data
    - Vector storage for embeddings
 
 3. **API Layer**
