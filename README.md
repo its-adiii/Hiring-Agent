@@ -1,4 +1,4 @@
-# AI Recruitment System
+# Agentic AI HR Solution
 
 An intelligent recruitment system that leverages multiple AI agents to streamline the hiring process, from resume screening to candidate evaluation.
 
