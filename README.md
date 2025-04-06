@@ -1,116 +1,219 @@
 # AI Recruitment System
 
-A multi-agent AI system for automated recruitment processes using FLAN-T5-Small model.
+An intelligent recruitment system that leverages multiple AI agents to streamline the hiring process, from resume screening to candidate evaluation.
+
+## Table of Contents
+- [Features](#features)
+- [System Architecture](#system-architecture)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Running the Application](#running-the-application)
+- [API Documentation](#api-documentation)
+- [Project Structure](#project-structure)
+- [Technologies Used](#technologies-used)
+- [Contributing](#contributing)
 
 ## Features
 
-- 🤖 Multi-agent AI system (JD Processing, Candidate Screening, Interview)
-- 🧠 FLAN-T5-Small model for natural language processing
-- 🚀 FastAPI backend with async processing
-- ⚛️ React frontend with Material UI
-- 📊 Real-time dashboard
-- 🗄️ SQLite database with SQLAlchemy ORM
+- **Intelligent Resume Analysis**: Automated extraction of skills, experience, and qualifications
+- **Job Description Processing**: Smart parsing and requirement analysis
+- **Advanced Candidate Matching**: AI-powered matching algorithm
+- **Automated Screening**: Dynamic question generation and evaluation
+- **Interactive Dashboard**: Real-time metrics and analytics
+- **Interview Management**: Structured interview process with AI assistance
+
+## System Architecture
+
+### Backend Components
+1. **AI Agents**
+   - Resume Analysis Agent
+   - Job Description Agent
+   - Matching Agent
+   - Screening Agent
+   - Interview Agent
+
+2. **Database**
+   - PostgreSQL for structured data
+   - Vector storage for embeddings
+
+3. **API Layer**
+   - FastAPI framework
+   - RESTful endpoints
+   - WebSocket support for real-time updates
+
+### Frontend Components
+- React-based SPA
+- Material-UI components
+- Context API for state management
+- Recharts for data visualization
 
 ## Prerequisites
 
-- Python 3.8+
-- Node.js 14+
-- npm or yarn
+- Python 3.9+
+- Node.js 16+
+- PostgreSQL 13+
 - Git
 
 ## Installation
 
 ### 1. Clone the Repository
-
 ```bash
-git clone https://github.com/its-adiii/AI-Recruitment-System.git
-cd AI-Recruitment-System
+git clone https://github.com/its-adiii/Hiring-Agent.git
+cd Hiring-Agent
 ```
 
 ### 2. Backend Setup
-
 ```bash
 # Create and activate virtual environment
 python -m venv venv
-# On Windows
-.\venv\Scripts\activate
-# On Unix or MacOS
-source venv/bin/activate
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install dependencies
+cd backend
 pip install -r requirements.txt
 
-# Start the backend server
-cd backend
-python -m uvicorn main:app --reload
+# Set up environment variables
+cp .env.example .env
+# Edit .env with your configuration
 ```
 
-The backend server will start at http://localhost:8000
-
 ### 3. Frontend Setup
-
 ```bash
-# Navigate to frontend directory
 cd frontend
-
-# Install dependencies
 npm install
+```
 
-# Start the frontend development server
+### 4. Database Setup
+```bash
+# Create PostgreSQL database
+createdb hiring_agent_db
+
+# Run migrations
+cd backend
+alembic upgrade head
+```
+
+## Configuration
+
+### Backend Environment Variables (.env)
+```env
+DATABASE_URL=postgresql://username:password@localhost:5432/hiring_agent_db
+OPENAI_API_KEY=your_openai_api_key
+JWT_SECRET_KEY=your_jwt_secret
+CORS_ORIGINS=http://localhost:3000
+```
+
+### Frontend Environment Variables (.env)
+```env
+REACT_APP_API_URL=http://localhost:8000
+REACT_APP_WS_URL=ws://localhost:8000/ws
+```
+
+## Running the Application
+
+### 1. Start Backend Server
+```bash
+cd backend
+uvicorn main:app --reload --port 8000
+```
+
+### 2. Start Frontend Development Server
+```bash
+cd frontend
 npm start
 ```
 
-The frontend will be available at http://localhost:3000
+The application will be available at:
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:8000
+- API Documentation: http://localhost:8000/docs
+
+## API Documentation
+
+### Main Endpoints
+
+#### Authentication
+- POST /auth/login
+- POST /auth/register
+
+#### Candidates
+- GET /candidates
+- POST /candidates
+- GET /candidates/{id}
+- PUT /candidates/{id}
+
+#### Jobs
+- GET /jobs
+- POST /jobs
+- GET /jobs/{id}
+- PUT /jobs/{id}
+
+#### Screening
+- POST /screening/start
+- GET /screening/{id}/status
+- POST /screening/{id}/evaluate
+
+#### Dashboard
+- GET /dashboard
+- GET /dashboard/metrics
+- GET /dashboard/analytics
 
 ## Project Structure
 
 ```
-AI-Recruitment-System/
+hiring-agent/
 ├── backend/
 │   ├── agents/
-│   │   ├── __init__.py
 │   │   ├── base_agent.py
+│   │   ├── resume_agent.py
 │   │   ├── jd_agent.py
-│   │   ├── candidate_agent.py
+│   │   ├── matching_agent.py
+│   │   ├── screening_agent.py
 │   │   └── interview_agent.py
-│   ├── data/
-│   │   └── recruitment.db
+│   ├── models/
+│   ├── schemas/
+│   ├── services/
+│   ├── tests/
 │   ├── main.py
-│   ├── models.py
-│   ├── schemas.py
-│   └── database.py
+│   └── requirements.txt
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
 │   │   ├── context/
+│   │   ├── api/
+│   │   ├── utils/
 │   │   └── App.js
+│   ├── public/
 │   └── package.json
-├── requirements.txt
 └── README.md
 ```
 
-## API Documentation
+## Technologies Used
 
-Once the backend is running, visit http://localhost:8000/docs for the complete API documentation.
+### Backend
+- FastAPI
+- SQLAlchemy
+- OpenAI API
+- PostgreSQL
+- Alembic
+- Pydantic
+- PyTest
 
-Key endpoints:
-- `/dashboard` - Get dashboard statistics and metrics
-- `/debug/data` - View all database contents (development only)
+### Frontend
+- React
+- Material-UI
+- Recharts
+- Axios
+- React Router
+- Context API
 
-## Environment Setup
-
-The system will automatically:
-1. Create necessary database tables
-2. Initialize the FLAN-T5-Small model
-3. Generate sample data for testing
-
-## Common Issues & Solutions
-
-1. **Model Download**: On first run, the system will download the FLAN-T5-Small model (~300MB). Ensure you have a stable internet connection.
-
-2. **CUDA Support**: The system automatically detects GPU availability. If CUDA is available, it will use GPU acceleration.
-
-3. **Database Location**: The SQLite database is created at `backend/data/recruitment.db`. Ensure the directory has write permissions.
+### DevOps & Tools
+- Git
+- Docker
+- GitHub Actions
+- ESLint
+- Prettier
 
 ## Contributing
 
