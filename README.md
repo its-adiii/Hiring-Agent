@@ -14,7 +14,7 @@ An intelligent recruitment system that leverages multiple AI agents to streamlin
 - [Technologies Used](#technologies-used)
 - [Contributing](#contributing)
 
-## Features
+## Features-
 
 - **Intelligent Resume Analysis**: Automated extraction of skills, experience, and qualifications
 - **Job Description Processing**: Smart parsing and requirement analysis
